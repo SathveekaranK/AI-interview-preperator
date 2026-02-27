@@ -19,7 +19,7 @@ export async function POST(request: Request) {
         const transcript = messages.map((m: any) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`).join('\n');
 
         const payload = {
-            model: 'google/gemini-2.0-flash-lite-preview-02-05:free', // Use deep reasoning or reliable JSON model
+            model: 'openai/gpt-oss-120b:free', // Use deep reasoning or reliable JSON model
             messages: [
                 {
                     role: 'system',

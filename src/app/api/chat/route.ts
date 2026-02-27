@@ -17,7 +17,7 @@ export async function POST(request: Request) {
         }
 
         const payload = {
-            model: 'google/gemini-2.0-flash-lite-preview-02-05:free',
+            model: 'openai/gpt-oss-120b:free',
             messages: [
                 {
                     role: 'system',
@@ -35,8 +35,10 @@ Instructions:
             ]
         };
 
+        console.log("Sending payload to OpenRouter:", JSON.stringify(payload));
+
         const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 12000); // 12 second timeout
+        const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15 second timeout
 
         try {
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -56,16 +58,18 @@ Instructions:
             if (!response.ok) {
                 const errorData = await response.text();
                 console.error("OpenRouter API Failed:", response.status, errorData);
-                throw new Error(`OpenRouter API responded with status ${response.status}`);
+                throw new Error(`OpenRouter API responded with status ${response.status}: ${errorData}`);
             }
 
             const data = await response.json();
+            console.log("OpenRouter Response Data:", JSON.stringify(data));
 
             if (data.choices && data.choices[0]?.message?.content) {
                 return NextResponse.json({
                     reply: data.choices[0].message.content
                 });
             } else {
+                console.error("Invalid OpenRouter Response:", data);
                 throw new Error('Could not extract valid response from AI.');
             }
 
@@ -73,16 +77,16 @@ Instructions:
             console.error("Fetch Execution Error:", error);
             if (error.name === 'AbortError') {
                 return NextResponse.json({
-                    reply: "I seem to be having connection issues. Could you repeat your last point or we can move on to the next question?"
+                    reply: "The interviewer is taking a bit too long to respond. Could you repeat that or let me try to reboot our connection?"
                 });
             }
             throw error;
         }
 
     } catch (error: any) {
-        console.error("Chat Error:", error);
+        console.error("Full Chat Route Error:", error);
         return NextResponse.json({
-            reply: "I am having trouble processing that right now. Let's continue with the next topic."
+            reply: `Internal Interviewer Error: ${error.message || "Unknown error occurred"}`
         });
     }
 }

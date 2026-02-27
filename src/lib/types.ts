@@ -22,3 +22,16 @@ export interface AnswerValidation {
   answer: string;
   evaluation: EvaluationResponse;
 }
+
+export interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface EvaluationResult {
+  question: string;
+  answer: string;
+  score: number;
+  feedback: string;
+  suggestion: string;
+}

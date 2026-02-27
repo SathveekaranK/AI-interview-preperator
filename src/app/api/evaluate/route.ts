@@ -5,32 +5,50 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { question, answer } = body;
+        const { messages, domain } = body;
 
-        if (!question || !answer) {
-            return NextResponse.json({ error: 'Missing question or answer' }, { status: 400 });
+        if (!messages) {
+            return NextResponse.json({ error: 'Missing messages' }, { status: 400 });
         }
 
         if (!OPENROUTER_API_KEY) {
             return NextResponse.json({ error: 'Server misconfiguration: API key missing' }, { status: 500 });
         }
 
+        // We only want the user and assistant turns for the evaluation context
+        const transcript = messages.map((m: any) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`).join('\n');
+
         const payload = {
-            model: 'google/gemini-2.0-flash-lite-preview-02-05:free',
+            model: 'google/gemini-2.0-flash-lite-preview-02-05:free', // Use deep reasoning or reliable JSON model
             messages: [
                 {
                     role: 'system',
-                    content: 'You are an expert Technical and HR Interviewer. Your goal is to evaluate candidate answers objectively. You MUST respond with ONLY a raw JSON object without markdown formatting, using this exact schema: {"score": 7, "feedback": "Your short feedback here", "suggestion": "A suggestion to improve"}. Provide a score from 1 to 10 based on completeness, clarity, and relevance.'
+                    content: `You are an expert ${domain} Interview Evaluator. You just finished a mock interview with a candidate.
+Below is the full transcript of your conversation. 
+You MUST evaluate the candidate's performance across the entire interview.
+You MUST respond with ONLY a raw JSON array of objects without markdown formatting.
+
+Format schema expected:
+[
+  {
+     "question": "The specific question the interviewer asked.",
+     "answer": "The candidate's core answer.",
+     "score": 8, // out of 10
+     "feedback": "Short feedback on this specific answer",
+     "suggestion": "How to handle this question better next time"
+  }
+]
+Extract EVERY distinct technical or behavioral question asked by the interviewer, summarize the candidate's response, and provide the scoring.`
                 },
                 {
                     role: 'user',
-                    content: `Question: ${question}\nCandidate Answer: ${answer}`
+                    content: `Here is the interview transcript:\n\n${transcript}`
                 }
             ]
         };
 
         const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 12000); // 12 second timeout
+        const timeoutId = setTimeout(() => abortController.abort(), 30000); // 30 second timeout for heavy summary
 
         try {
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -49,13 +67,12 @@ export async function POST(request: Request) {
 
             if (!response.ok) {
                 const errorData = await response.text();
-                console.error("OpenRouter API Failed:", response.status, errorData);
                 throw new Error(`OpenRouter API responded with status ${response.status}`);
             }
 
             const data = await response.json();
 
-            let evaluationArgs = null;
+            let evaluationArray = [];
             if (data.choices && data.choices[0]?.message?.content) {
                 let textContent = data.choices[0].message.content.trim();
 
@@ -67,40 +84,25 @@ export async function POST(request: Request) {
                 }
 
                 try {
-                    evaluationArgs = JSON.parse(textContent);
+                    evaluationArray = JSON.parse(textContent);
                 } catch (e) {
-                    console.error("Failed to parse content as JSON", e, "Raw text:", textContent);
+                    console.error("Failed to parse content as JSON array", e, "Raw text:", textContent);
                 }
             }
 
-            if (evaluationArgs && evaluationArgs.score !== undefined) {
-                return NextResponse.json({
-                    score: evaluationArgs.score,
-                    feedback: evaluationArgs.feedback || "Good effort.",
-                    suggestion: evaluationArgs.suggestion || "Keep practicing."
-                });
+            if (Array.isArray(evaluationArray) && evaluationArray.length > 0) {
+                return NextResponse.json(evaluationArray);
             } else {
-                throw new Error('Could not extract valid evaluation from AI response.');
+                throw new Error('Could not extract valid evaluation array from AI response.');
             }
 
         } catch (error: any) {
             console.error("Fetch Execution Error:", error);
-            if (error.name === 'AbortError') {
-                return NextResponse.json({
-                    score: 5,
-                    feedback: "The AI evaluator timed out. Let's proceed to the next question.",
-                    suggestion: "Consider keeping answers more concise."
-                });
-            }
             throw error;
         }
 
     } catch (error: any) {
         console.error("Evaluation Error:", error);
-        return NextResponse.json({
-            score: 5,
-            feedback: "Failed to evaluate answer due to a technical error. Keep going!",
-            suggestion: "Make sure you structure your answers using the STAR format."
-        });
+        return NextResponse.json({ error: "Failed to evaluate" }, { status: 500 });
     }
 }
